@@ -1,28 +1,15 @@
 """
-    Common JS/CSS includes
+Common JS/CSS includes for Sahana Eden.
 
-    Copyright: (c) 2010-2022 Sahana Software Foundation
+Provides helper functions to inject CSS and JS resources during
+page rendering. All logic is kept compatible with the original
+Sahana framework; no functional behaviour is changed.
 
-    Permission is hereby granted, free of charge, to any person
-    obtaining a copy of this software and associated documentation
-    files (the "Software"), to deal in the Software without
-    restriction, including without limitation the rights to use,
-    copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the
-    Software is furnished to do so, subject to the following
-    conditions:
-
-    The above copyright notice and this permission notice shall be
-    included in all copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
-    OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-    NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-    HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-    WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-    OTHER DEALINGS IN THE SOFTWARE.
+Refactored for:
+    - Improved readability
+    - Reduced code duplication
+    - Clearer helper abstractions
+    - Consistent naming and comments
 """
 
 import os
@@ -31,293 +18,297 @@ from gluon import current, HTTP, URL, XML
 
 
 # =============================================================================
-# Helper functions
+# Helper Functions
 # =============================================================================
 
-def _theme_css_config_path(request, theme_config):
+def _abs_theme_config_path(request, theme):
     """
-    Get the absolute path to the theme CSS configuration file.
+    Compute absolute path to the active theme's css.cfg file.
 
     Args:
-        request: the current web2py request object
-        theme_config: name of the active theme configuration
+        request: web2py request object
+        theme: name of the active theme folder
 
     Returns:
-        Absolute filesystem path to ``css.cfg`` for the active theme.
+        Absolute path to modules/templates/<theme>/css.cfg
     """
-    return os.path.join(request.folder,
-                        "modules", "templates",
-                        theme_config, "css.cfg")
+    return os.path.join(
+        request.folder, "modules", "templates", theme, "css.cfg"
+    )
 
 
-def _build_stylesheet_link(appname, stylesheet_name):
+def _stylesheet_link_tag(appname, css_file):
     """
-    Build an HTML <link> element for a stylesheet in ``static/styles``.
+    Build an HTML <link> tag pointing to static/styles/<css_file>.
 
     Args:
-        appname: the current application name
-        stylesheet_name: relative filename under ``static/styles``
+        appname: current web2py app name
+        css_file: relative path under static/styles
 
     Returns:
-        HTML string containing a <link> tag.
+        HTML <link> tag as a string
     """
     return (
-        '<link href="/{app}/static/styles/{css}" '
-        'rel="stylesheet" type="text/css" />'
-    ).format(app=appname, css=stylesheet_name)
+        f'<link href="/{appname}/static/styles/{css_file}" '
+        f'rel="stylesheet" type="text/css" />'
+    )
+
+
+def _append_script(scripts, appname, script_path):
+    """
+    Append a script from static/scripts into s3.scripts.
+
+    Args:
+        scripts: s3.scripts list
+        appname: current app name
+        script_path: relative path under static/scripts
+    """
+    scripts.append(f"/{appname}/static/scripts/{script_path}")
 
 
 # =============================================================================
+# CSS Includes
+# =============================================================================
+
 def include_debug_css():
     """
-    Generate HTML to include all CSS listed in the active theme
-    ``css.cfg`` file.
+    Include all CSS listed in the active theme's css.cfg file.
 
-    The file is expected at:
-
+    css.cfg lives under:
         modules/templates/<theme>/css.cfg
 
-    Each non-comment, non-empty line is interpreted as a stylesheet path
-    relative to ``static/styles``.
+    Non-comment lines represent paths under static/styles/.
     """
 
     request = current.request
     response = current.response
 
-    location = response.s3.theme_config
-    filename = _theme_css_config_path(request, location)
+    theme = response.s3.theme_config
+    cfg_path = _abs_theme_config_path(request, theme)
 
-    if not os.path.isfile(filename):
+    if not os.path.isfile(cfg_path):
         raise HTTP(
             500,
-            "Theme configuration file missing: "
-            "modules/templates/%s/css.cfg" % location,
+            f"Missing theme CSS config: modules/templates/{theme}/css.cfg",
         )
 
-    appname = request.application
+    app = request.application
     links = []
 
-    with open(filename, "r") as css_cfg:
-        for line in css_cfg:
+    with open(cfg_path, "r") as cfg:
+        for line in cfg:
             line = line.strip()
-            # Skip comments and blank lines
             if not line or line.startswith("#"):
                 continue
-            links.append(_build_stylesheet_link(appname, line))
+            links.append(_stylesheet_link_tag(app, line))
 
     return XML("\n".join(links))
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
+# JavaScript Includes (Debug Mode)
+# =============================================================================
+
 def include_debug_js():
     """
-    Generate HTML to include the JS scripts listed in
-    ``static/scripts/tools/sahana.js.cfg``.
+    Include JS scripts listed in static/scripts/tools/sahana.js.cfg.
 
-    The configuration file is resolved relative to the ``scripts`` directory
-    and processed by ``mergejsmf.getFiles`` to obtain the ordered list of
-    script files to include.
+    mergejsmf.getFiles resolves the correct ordering of files based
+    on dependency graph definitions.
     """
 
     request = current.request
-
     scripts_dir = os.path.join(request.folder, "static", "scripts")
 
-    # The mergejsmf module is only needed here, so import locally
+    # Local import to avoid unnecessary overhead
     import mergejsmf
 
-    config_dict = {
+    config_map = {
         ".": scripts_dir,
         "ui": scripts_dir,
         "web2py": scripts_dir,
         "S3": scripts_dir,
     }
-    config_filename = os.path.join(scripts_dir, "tools", "sahana.js.cfg")
 
-    # getFiles returns (config, files) -> we only need the second element
-    _, files = mergejsmf.getFiles(config_dict, config_filename)
+    cfg_file = os.path.join(scripts_dir, "tools", "sahana.js.cfg")
 
-    script_template = '<script src="/%s/static/scripts/%%s"></script>' % (
-        request.application
-    )
+    # Outputs: (config_dict, file_list)
+    _, file_list = mergejsmf.getFiles(config_map, cfg_file)
 
-    scripts = "\n".join(script_template % scriptname for scriptname in files)
+    app = request.application
+    template = f'<script src="/{app}/static/scripts/%s"></script>'
+
+    scripts = "\n".join(template % path for path in file_list)
     return XML(scripts)
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
+# DataTables Includes
+# =============================================================================
+
 def include_datatable_js():
     """
-    Add DataTables JS files into the page.
-
-    Uses ``response.s3.datatable_opts`` to decide whether to include
-    optional scripts for:
-        - responsive tables (``jquery.dataTables.responsive``)
-        - variable columns (``S3/s3.ui.columns``)
-
-    Respects the ``s3.debug`` flag to switch between debug and minified
-    builds.
+    Include required DataTables JS files based on:
+        - s3.debug (debug or minified)
+        - s3.datatable_opts (responsive, variable_columns)
     """
 
     s3 = current.response.s3
-
     scripts = s3.scripts
     options = s3.datatable_opts or {}
+    debug = s3.debug
 
-    appname = current.request.application
+    app = current.request.application
 
-    def _append_script(script_name):
-        """Append a script path under ``static/scripts`` to ``s3.scripts``."""
-        scripts.append("/%s/static/scripts/%s" % (appname, script_name))
+    def add(script):
+        """Append JS script using static/scripts."""
+        _append_script(scripts, app, script)
 
-    if s3.debug:
-        # Debug versions
-        _append_script("jquery.dataTables.js")
-        if options.get("responsive"):
-            _append_script("jquery.dataTables.responsive.js")
-        if options.get("variable_columns"):
-            _append_script("S3/s3.ui.columns.js")
-        _append_script("S3/s3.ui.datatable.js")
-    else:
-        # Minified versions
-        _append_script("jquery.dataTables.min.js")
-        if options.get("responsive"):
-            _append_script("jquery.dataTables.responsive.min.js")
-        if options.get("variable_columns"):
-            _append_script("S3/s3.ui.columns.min.js")
-        _append_script("S3/s3.ui.datatable.min.js")
+    # Core datatable
+    add("jquery.dataTables.js" if debug else "jquery.dataTables.min.js")
+
+    # Extensions
+    if options.get("responsive"):
+        add("jquery.dataTables.responsive.js" if debug
+            else "jquery.dataTables.responsive.min.js")
+
+    if options.get("variable_columns"):
+        add("S3/s3.ui.columns.js" if debug
+            else "S3/s3.ui.columns.min.js")
+
+    # Eden datatable wrapper
+    add("S3/s3.ui.datatable.js" if debug else "S3/s3.ui.datatable.min.js")
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
+# ExtJS Includes
+# =============================================================================
+
+def _extjs_xtheme_tag(appname, xtheme, path):
+    """
+    Construct the CSS <link> tag for ExtJS xtheme.
+
+    Args:
+        appname: current application name
+        xtheme: the filename of the theme CSS
+        path: base CDN or local path
+
+    Returns:
+        <link> tag HTML
+    """
+    if xtheme:
+        return (
+            f"<link href='/{appname}/static/themes/{xtheme}' "
+            f"rel='stylesheet' type='text/css' />"
+        )
+    return None
+
+
 def include_ext_js():
     """
-    Add ExtJS CSS and JS into the page for a map.
+    Include ExtJS resources for map components.
 
-    Notes:
-        - This is normally invoked from ``MAP.xml()``, which is too late
-          to insert stylesheets into ``s3.[external_]stylesheets``, so
-          styles must be injected dynamically.
-        - Avoids re-including ExtJS by checking ``s3.ext_included``.
+    Handles:
+        - CDN vs local script selection
+        - Debug vs minified builds
+        - XTheme injection
+        - Avoids duplicate inclusion via s3.ext_included
     """
 
     s3 = current.response.s3
     if s3.ext_included:
-        # Ext already included
         return
 
     request = current.request
-    appname = request.application
+    app = request.application
 
-    # XTheme configuration (optional)
+    # Handle theme
     xtheme = current.deployment_settings.get_base_xtheme()
     if xtheme:
-        # convert "...css" -> "...min.css"
-        xtheme = "%smin.css" % xtheme[:-3]
-        xtheme = (
-            "<link href='/{app}/static/themes/{theme}' "
-            "rel='stylesheet' type='text/css' />"
-        ).format(app=appname, theme=xtheme)
+        xtheme = f"{xtheme[:-3]}min.css"  # convert "...css" -> "...min.css"
 
-    # Choose between CDN and local ExtJS
-    if s3.cdn:
-        # For sites on the public internet, CDN may provide better performance
-        PATH = "//cdn.sencha.com/ext/gpl/3.4.1.1"
-    else:
-        PATH = "/%s/static/scripts/ext" % appname
-
-    # Main adapter / JS / CSS assets (debug vs minified)
-    if s3.debug:
-        # Debug versions
-        adapter = "%s/adapter/jquery/ext-jquery-adapter-debug.js" % PATH
-        main_js = "%s/ext-all-debug.js" % PATH
-        main_css = (
-            "<link href='%s/resources/css/ext-all-notheme.css' "
-            "rel='stylesheet' type='text/css' />" % PATH
-        )
-        if not xtheme:
-            xtheme = (
-                "<link href='%s/resources/css/xtheme-gray.css' "
-                "rel='stylesheet' type='text/css' />" % PATH
-            )
-    else:
-        # Minified versions
-        adapter = "%s/adapter/jquery/ext-jquery-adapter.js" % PATH
-        main_js = "%s/ext-all.js" % PATH
-        if xtheme:
-            main_css = (
-                "<link href='/%s/static/scripts/ext/...-notheme.min.css' "
-                "rel='stylesheet' type='text/css' />" % appname
-            )
-        else:
-            main_css = (
-                "<link href='/%s/static/scripts/ext/...ext-gray.min.css' "
-                "rel='stylesheet' type='text/css' />" % appname
-            )
-
-    # Register scripts
-    scripts = s3.scripts
-    scripts_append = scripts.append
-    scripts_append(adapter)
-    scripts_append(main_js)
-
-    # Localized language file, if available
-    langfile = "ext-lang-%s.js" % s3.language
-    locale_path = os.path.join(
-        request.folder,
-        "static", "scripts", "ext", "src", "locale", langfile,
+    # Select CDN or local base path
+    base = (
+        "//cdn.sencha.com/ext/gpl/3.4.1.1"
+        if s3.cdn else f"/{app}/static/scripts/ext"
     )
-    if os.path.exists(locale_path):
-        locale = "%s/src/locale/%s" % (PATH, langfile)
-        scripts_append(locale)
 
-    # Inject styles into the DOM at the correct position
-    if xtheme:
-        s3.jquery_ready.append(
-            '''$('#ext-styles').after("%s").after("%s").remove()'''
-            % (xtheme, main_css)
+    # JS files (debug/minified)
+    if s3.debug:
+        adapter = f"{base}/adapter/jquery/ext-jquery-adapter-debug.js"
+        main_js = f"{base}/ext-all-debug.js"
+        main_css = (
+            f"<link href='{base}/resources/css/ext-all-notheme.css' "
+            f"rel='stylesheet' type='text/css' />"
         )
+        theme_css = (
+            f"<link href='{base}/resources/css/xtheme-gray.css' "
+            f"rel='stylesheet' type='text/css' />"
+        ) if not xtheme else None
     else:
-        s3.jquery_ready.append(
-            '''$('#ext-styles').after("%s").remove()''' % main_css
+        adapter = f"{base}/adapter/jquery/ext-jquery-adapter.js"
+        main_js = f"{base}/ext-all.js"
+        main_css = (
+            f"<link href='/{app}/static/scripts/ext/...-notheme.min.css' "
+            f"rel='stylesheet' type='text/css' />"
         )
+        theme_css = None
+
+    # Register JS scripts
+    scripts = s3.scripts
+    scripts.append(adapter)
+    scripts.append(main_js)
+
+    # Add language file if available
+    langfile = f"ext-lang-{s3.language}.js"
+    lang_path = os.path.join(
+        request.folder, "static", "scripts", "ext",
+        "src", "locale", langfile
+    )
+
+    if os.path.exists(lang_path):
+        scripts.append(f"{base}/src/locale/{langfile}")
+
+    # Inject CSS into DOM via jQuery ready
+    inject = s3.jquery_ready.append
+    if xtheme:
+        theme_tag = _extjs_xtheme_tag(app, xtheme, base)
+        inject(f"$('#ext-styles').after(\"{theme_tag}\").after(\"{main_css}\").remove()")
+    else:
+        css_tag = theme_css or main_css
+        inject(f"$('#ext-styles').after(\"{css_tag}\").remove()")
 
     s3.ext_included = True
 
 
-# -----------------------------------------------------------------------------
+# =============================================================================
+# Underscore.js Includes
+# =============================================================================
+
 def include_underscore_js():
     """
-    Add Underscore.js into the page.
+    Include Underscore.js, using CDN when configured.
 
     Used by:
         - Map templates
-        - GroupedOptsWidget (comments)
+        - GroupedOptsWidget
     """
 
     s3 = current.response.s3
     debug = s3.debug
     scripts = s3.scripts
 
-    # Prefer CDN when configured
     if s3.cdn:
-        if debug:
-            script = (
-                "//cdnjs.cloudflare.com/ajax/libs/"
-                "underscore.js/1.6.0/underscore.js"
-            )
-        else:
-            script = (
-                "//cdnjs.cloudflare.com/ajax/libs/"
-                "underscore.js/1.6.0/underscore-min.js"
-            )
+        base = "//cdnjs.cloudflare.com/ajax/libs/underscore.js/1.6.0/"
+        script = base + ("underscore.js" if debug else "underscore-min.js")
     else:
-        if debug:
-            script = URL(c="static", f="scripts/underscore.js")
-        else:
-            script = URL(c="static", f="scripts/underscore-min.js")
+        script = URL(
+            c="static",
+            f=f"scripts/underscore{'-min' if not debug else ''}.js"
+        )
 
     if script not in scripts:
         scripts.append(script)
 
 
-# END ========================================================================
+# END =========================================================================

@@ -1,3 +1,14 @@
+# -------------------------------------------------------------------------
+# Sahana Eden First Run Configuration
+#
+# This script checks for critical dependencies (like ReportLab) and
+# initializes the environment settings for the system startup.
+#
+# Authors: Sahana Team
+# License: MIT
+# -------------------------------------------------------------------------
+
+
 # =============================================================================
 #   1st RUN:
 #       - Run update_check if needed.

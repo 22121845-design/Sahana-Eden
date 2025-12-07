@@ -716,23 +716,8 @@ def ldata():
                   (table.path.like("%/" + location_id + "/%")))
     else:
         query &= (table.parent == location_id)
-    fields = [table.id,
-              table.name,
-              table.level,
-              table.parent,
-              table.lon_min,
-              table.lat_min,
-              table.lon_max,
-              table.lat_max,
-              ]
-    if translate:
-        ntable = s3db.gis_location_name
-        fields.append(ntable.name_l10n)
-        left = ntable.on((ntable.deleted == False) & \
-                         (ntable.language == language) & \
-                         (ntable.location_id == table.id))
-    else:
-        left = None
+    from core import LocationSelector
+    fields, left = LocationSelector._get_location_fields(table, translate, language)
 
     locations = db((table.id == location_id) | query).select(*fields,
                                                              left=left)

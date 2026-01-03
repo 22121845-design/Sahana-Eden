@@ -87,6 +87,60 @@ graph TB
     class client_response,response_headers,json_encode response
 ```
 
+### 2.1.1 Node-Style Call Graph
+
+```mermaid
+graph TB
+    %% Node Definitions - Simple circular style
+    UI((UI))
+    ldata((ldata))
+    HTTP((HTTP))
+    s3_keep((s3_keep))
+    settings((settings))
+    selector((selector))
+    db((db))
+    gis_loc((gis_loc))
+    gis_name((gis_name))
+    as_dict((as_dict))
+    json((json))
+    headers((headers))
+    response((response))
+    
+    %% Call Relationships
+    UI --> ldata
+    ldata --> HTTP
+    ldata --> s3_keep
+    ldata --> settings
+    ldata --> gis_loc
+    ldata --> selector
+    ldata --> db
+    ldata --> as_dict
+    ldata --> headers
+    ldata --> json
+    json --> response
+    selector --> gis_name
+    db --> gis_loc
+    db --> gis_name
+```
+
+**Node Legend:**
+
+| Node | Full Name | Location |
+|------|-----------|----------|
+| **UI** | LocationSelector Widget | Frontend |
+| **ldata** | ldata() | [gis.py:667-807](file:///c:/Users/nijam/OneDrive/Desktop/sme/Assignment/Codebase-v2/Sahana-Eden/controllers/gis.py#L667-L807) |
+| **HTTP** | HTTP(400) | gluon.HTTP |
+| **s3_keep** | s3_keep_messages() | [utils.py:693](file:///c:/Users/nijam/OneDrive/Desktop/sme/Assignment/Codebase-v2/Sahana-Eden/modules/core/tools/utils.py#L693) |
+| **settings** | get_L10n_translate_gis_location() | deployment_settings |
+| **selector** | LocationSelector._get_location_fields() | [selectors.py:971-996](file:///c:/Users/nijam/OneDrive/Desktop/sme/Assignment/Codebase-v2/Sahana-Eden/modules/core/ui/selectors.py#L971-L996) |
+| **db** | db.select() | Database Query |
+| **gis_loc** | gis_location | Database Table |
+| **gis_name** | gis_location_name | Translation Table |
+| **as_dict** | locations.as_dict() | Data Processing |
+| **json** | json.dumps() | JSON Encoding |
+| **headers** | response.headers | HTTP Headers |
+| **response** | JSON Response | Client Output |
+
 ### 2.2 Detailed Dependency Graph
 
 ```mermaid

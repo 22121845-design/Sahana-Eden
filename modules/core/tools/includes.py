@@ -11,6 +11,18 @@ Refactored for:
     - Clearer helper abstractions
     - Consistent naming and comments
 """
+# -----------------------------------------------------------------------------
+# Developer Notes (Training & Consultative Maintenance)
+#
+# This module controls CSS/JS inclusion for Sahana Eden. Developers modifying
+# themes, UI assets, or debugging frontend issues should start here.
+#
+# Key rules:
+#   - Always respect s3.debug: debug == full files, else minified.
+#   - Never break backward compatibility with existing scripts.
+#   - Use helper functions to avoid duplication.
+#   - Use current.log for safe debugging output, not print().
+# -----------------------------------------------------------------------------
 
 import os
 
@@ -71,14 +83,6 @@ def _append_script(scripts, appname, script_path):
 # =============================================================================
 
 def include_debug_css():
-    """
-    Include all CSS listed in the active theme's css.cfg file.
-
-    css.cfg lives under:
-        modules/templates/<theme>/css.cfg
-
-    Non-comment lines represent paths under static/styles/.
-    """
 
     request = current.request
     response = current.response
@@ -95,15 +99,15 @@ def include_debug_css():
     app = request.application
     links = []
 
-    with open(cfg_path, "r") as cfg:
-        for line in cfg:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            links.append(_stylesheet_link_tag(app, line))
+    # Assignment 2 — Preventive & Corrective Maintenance
+    css_entries = _safe_read_cfg(cfg_path)
+    if not css_entries:
+        current.log.warning(f"No valid CSS entries found in {cfg_path}")
+
+    for entry in css_entries:
+        links.append(_stylesheet_link_tag(app, entry))
 
     return XML("\n".join(links))
-
 
 # =============================================================================
 # JavaScript Includes (Debug Mode)
@@ -133,7 +137,8 @@ def include_debug_js():
     cfg_file = os.path.join(scripts_dir, "tools", "sahana.js.cfg")
 
     # Outputs: (config_dict, file_list)
-    _, file_list = mergejsmf.getFiles(config_map, cfg_file)
+    _, raw_list = mergejsmf.getFiles(config_map, cfg_file)
+    file_list = _validate_script_list(raw_list)
 
     app = request.application
     template = f'<script src="/{app}/static/scripts/%s"></script>'
@@ -266,8 +271,11 @@ def include_ext_js():
         "src", "locale", langfile
     )
 
+        # Assignment 2 — Preventive Maintenance: safe locale inclusion
     if os.path.exists(lang_path):
         scripts.append(f"{base}/src/locale/{langfile}")
+    else:
+        current.log.info(f"Locale file missing for ExtJS: {langfile}")
 
     # Inject CSS into DOM via jQuery ready
     inject = s3.jquery_ready.append
@@ -312,3 +320,68 @@ def include_underscore_js():
 
 
 # END =========================================================================
+# =============================================================================
+# Assignment 2 Maintenance Additions by Abdul Hadi Jano
+# Maintenance Types: Corrective, Enhancive, Reductive, Preventive,
+# Reformative, Evaluative, Consultative, Training
+# =============================================================================
+
+def _safe_read_cfg(cfg_path):
+    """
+    Safely read a CSS/JS configuration file with preventive checks.
+
+    This helper improves:
+        - Preventive Maintenance: validates file availability
+        - Corrective Maintenance: avoids crashes when cfg is invalid
+        - Evaluative Maintenance: provides consistent failure messages
+
+    Args:
+        cfg_path (str): Absolute filesystem path to configuration file.
+
+    Returns:
+        list[str]: Cleaned list of non-empty, non-comment entries.
+    """
+    if not os.path.exists(cfg_path):
+        # Preventive: avoid unexpected 500 crashes
+        current.log.warning(f"Config file missing: {cfg_path}")
+        return []
+
+    cleaned = []
+    try:
+        with open(cfg_path, "r") as cfg:
+            for line in cfg:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                cleaned.append(line)
+    except Exception as e:
+        # Corrective + Evaluative: error transparency
+        current.log.error(f"Failed to read config file {cfg_path}: {e}")
+        return []
+
+    return cleaned
+
+
+def _validate_script_list(file_list):
+    """
+    Validate a list of JS files returned by mergejsmf.
+
+    This supports:
+        - Reductive Maintenance: Removes invalid entries early
+        - Preventive Maintenance: Ensure file paths are valid strings
+
+    Args:
+        file_list (list): List of JS file paths.
+
+    Returns:
+        list: Sanitized list of scripts.
+    """
+    result = []
+    for item in file_list:
+        if not isinstance(item, str):
+            current.log.warning(f"Ignoring non-string JS include: {item}")
+            continue
+        if item.strip() == "":
+            continue
+        result.append(item)
+    return result

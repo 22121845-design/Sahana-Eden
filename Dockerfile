@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt
-RUN git clone --depth 1 https://github.com/web2py/web2py.git
+RUN git clone --depth 1 --recurse-submodules https://github.com/web2py/web2py.git
+
 
 WORKDIR /opt/web2py/applications/eden
 COPY . .
